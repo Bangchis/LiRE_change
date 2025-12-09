@@ -51,12 +51,16 @@ class NormalizedBoxEnv(ProxyEnv):
         scaled_action = np.clip(scaled_action, lb, ub)
 
         wrapped_step = self._wrapped_env.step(scaled_action)
-        next_obs, reward, terminate, done, info = wrapped_step
-        done = done or terminate
-        # if done == True:
-        #     done = 1.0
-        # else:
-        #     done = 0.0
+        
+        # --- SỬA LỖI TẠI ĐÂY ---
+        # Gym cũ chỉ trả về 4 giá trị. Đã xóa biến 'terminate' thừa.
+        next_obs, reward, done, info = wrapped_step
+        
+        # Dòng cũ gây lỗi (comment lại để tham khảo):
+        # next_obs, reward, terminate, done, info = wrapped_step
+        # done = done or terminate
+        # -----------------------
+
         if self._should_normalize:
             next_obs = self._apply_normalize_obs(next_obs)
         return next_obs, reward * self._reward_scale, done, info
