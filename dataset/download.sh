@@ -1,16 +1,16 @@
 download_tasks=(
     box-close-v2
-    # button-press-topdown-v2
-    # button-press-topdown-wall-v2
-    # dial-turn-v2
-    # drawer-open-v2
-    # hammer-v2
-    # handle-pull-side-v2
-    # lever-pull-v2
-    # peg-insert-side-v2
-    # peg-unplug-side-v2
-    # sweep-into-v2
-    # sweep-v2
+    button-press-topdown-v2
+    button-press-topdown-wall-v2
+    dial-turn-v2
+    drawer-open-v2
+    hammer-v2
+    handle-pull-side-v2
+    lever-pull-v2
+    peg-insert-side-v2
+    peg-unplug-side-v2
+    sweep-into-v2
+    sweep-v2
 )
 
 declare -A file_ids=(

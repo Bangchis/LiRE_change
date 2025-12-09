@@ -1,0 +1,48 @@
+HƯỚNG DẪN CÀI ĐẶT MÔI TRƯỜNG LiRE (METAWORLD + MUJOCO) KHÔNG LỖI
+================================================================
+
+PHẦN 1: CÀI ĐẶT HỆ THỐNG (SYSTEM DEPENDENCIES)
+----------------------------------------------
+Lỗi thường gặp: "Missing GL/osmesa.h" hoặc "No such file directory .mujoco"
+Khắc phục: Phải cài MuJoCo binary và thư viện đồ họa Linux trước.
+
+1. Cài thư viện Linux cần thiết:
+   sudo apt-get update
+   sudo apt-get install -y libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf unzip build-essential
+
+2. Tải và cài đặt MuJoCo 2.1.0 (Bắt buộc phải nằm ở /root/.mujoco):
+   mkdir -p ~/.mujoco
+   wget https://github.com/deepmind/mujoco/releases/download/2.1.0/mujoco210-linux-x86_64.tar.gz
+   tar -xvzf mujoco210-linux-x86_64.tar.gz -C ~/.mujoco/
+   rm mujoco210-linux-x86_64.tar.gz
+
+3. Cấu hình biến môi trường (Để Python tìm thấy MuJoCo):
+   echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin' >> ~/.bashrc
+   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
+
+
+PHẦN 2: CÀI ĐẶT PYTHON (PIP DEPENDENCIES) - QUAN TRỌNG THỨ TỰ
+-------------------------------------------------------------
+Lỗi thường gặp: "Numpy 2.0 AttributeError", "Cython compile error", "Metaworld python version mismatch".
+Khắc phục: Cài theo thứ tự và ép phiên bản cụ thể.
+
+1. Nâng cấp pip và setuptools:
+   pip install --upgrade pip setuptools wheel
+
+2. Hạ cấp các thư viện nền tảng để tránh xung đột (Quan trọng nhất):
+   pip install "numpy<2.0"       # Fix lỗi numpy 2.0 mới ra mắt
+   pip install "cython<3"        # Fix lỗi biên dịch mujoco-py với Cython 3.0
+
+3. Cài đặt các thư viện vệ tinh (dành cho dmc2gym):
+   pip install mujoco==2.3.7
+   pip install dm_control==1.0.14  # Bản cũ để tương thích với mujoco 2.3.7
+
+4. Cài đặt MetaWorld và dmc2gym:
+   pip install git+https://github.com/Farama-Foundation/Metaworld.git@v2.0.0
+   pip install git+https://github.com/denisyarats/dmc2gym.git
+
+5. (Tùy chọn) Cài các thư viện còn lại từ file requirements:
+   pip install -r requirements.txt
+
+================================================================
+Lưu ý: Lần đầu chạy script, hệ thống sẽ mất vài phút để Compile lock file mujoco-py.
