@@ -4,16 +4,17 @@ seed: 0
 checkpoints_path: logs/
 load_model: null
 # preference
-feedback_num: 1000
+feedback_num: 500  # M = number of block queries (reduced for fair comparison with RLT)
 data_quality: 5.0
 segment_size: 25
 normalize: true
 threshold: 0.5
 data_aug: none
-q_budget: 1
-feedback_type: RLT
+q_budget: 20  # K = block size (number of segments per block for BW feedback)
+feedback_type: BW  # Changed from RLT to Best-Worst blocks
 model_type: BT
 noise: 0.0
+lambda_bw: 1.0  # Weight for worst constraints in BW feedback
 human: false
 # MLP
 epochs: 1000

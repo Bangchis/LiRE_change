@@ -26,10 +26,14 @@ def collect_best_worst_blocks(dataset, traj_total, config):
 
     for _ in range(M):
         starts = []
+        seen = set()  # Tránh trùng segment start trong cùng block
         # sample K segment starts
         while len(starts) < K:
             idx = get_indices(traj_total, config)     # [[k,...,k+T-1]]
             k = idx[0][0]
+            if k in seen:
+                continue
+            seen.add(k)
             starts.append(k)
 
         # tính return của từng segment
@@ -39,9 +43,22 @@ def collect_best_worst_blocks(dataset, traj_total, config):
             R = float(np.sum(dataset["rewards"][seg_idx]))
             returns.append(R)
 
-        # chọn best/worst (có thể xử lý tie bằng threshold giống obtain_labels)
-        best_pos = int(np.argmax(returns))
-        worst_pos = int(np.argmin(returns))
+        # Xử lý tie theo threshold (giống obtain_labels)
+        gap = config.segment_size * config.threshold
+        mx, mn = max(returns), min(returns)
+        best_cand = [i for i, r in enumerate(returns) if abs(r - mx) <= gap]
+        worst_cand = [i for i, r in enumerate(returns) if abs(r - mn) <= gap]
+        best_pos = int(np.random.choice(best_cand))
+        worst_pos = int(np.random.choice(worst_cand))
+
+        # Handle corner case: best_pos == worst_pos
+        if best_pos == worst_pos:
+            # Resample worst from remaining candidates (exclude best)
+            other_cand = [i for i in range(K) if i != best_pos]
+            if len(other_cand) == 0:
+                # Skip this block if K=1 or all segments identical
+                continue
+            worst_pos = int(np.random.choice(other_cand))
 
         blocks.append((starts, best_pos, worst_pos, returns))
     return blocks

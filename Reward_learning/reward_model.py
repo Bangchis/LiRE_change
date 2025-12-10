@@ -10,7 +10,7 @@ import torch.optim as optim
 
 
 class RewardModel:
-    def __init__(self, config, obs_act_1, obs_act_2, labels, dimension):
+    def __init__(self, config, obs_act_1, obs_act_2, labels, dimension, weights=None):
         self.env = config.env
         self.config = config
         self.dimension = dimension
@@ -18,6 +18,11 @@ class RewardModel:
         self.obs_act_1 = obs_act_1
         self.obs_act_2 = obs_act_2
         self.labels = labels
+        # Weights for weighted BT loss (for BW feedback with lambda)
+        if weights is None:
+            self.weights = np.ones(len(labels), dtype=np.float32)
+        else:
+            self.weights = weights
         self.epochs = config.epochs
         self.batch_size = config.batch_size
         self.activation = config.activation
@@ -103,17 +108,26 @@ class RewardModel:
         elif self.ensemble_method == "uwo":
             return torch.mean(pred, dim=1) - 5 * torch.std(pred, dim=1)
 
-    def BT_loss(self, pred_hat, label):
+    def BT_loss_vec(self, pred_hat, label):
+        # Returns per-sample loss for weighted BT loss
         # https://pytorch.org/docs/stable/generated/torch.nn.LogSoftmax.html#torch.nn.LogSoftmax
-        logprobs = F.log_softmax(pred_hat, dim=1)
-        return -(label * logprobs).sum()
+        logprobs = F.log_softmax(pred_hat, dim=1)    # [B, 2]
+        return -(label * logprobs).sum(dim=1)        # [B] - per-sample loss
 
-    def linear_BT_loss(self, pred_hat, label):
-        pred_hat += self.segment_size + 1e-5
+    def BT_loss(self, pred_hat, label):
+        # Wrapper for backward compatibility
+        return self.BT_loss_vec(pred_hat, label).sum()
+
+    def linear_BT_loss_vec(self, pred_hat, label):
+        # Returns per-sample loss for weighted linear_BT loss
+        pred_hat = pred_hat + self.segment_size + 1e-5
         pred_prob = pred_hat / torch.sum(pred_hat, dim=1, keepdim=True)
         # label and pred_hat cross entropy loss
-        loss = -torch.sum(label * torch.log(pred_prob), dim=1)
-        return torch.sum(loss)
+        return -(label * torch.log(pred_prob)).sum(dim=1)  # [B] - per-sample loss
+
+    def linear_BT_loss(self, pred_hat, label):
+        # Wrapper for backward compatibility
+        return self.linear_BT_loss_vec(pred_hat, label).sum()
 
     def save_model(self, path):
         for member in range(self.ensemble_num):
@@ -202,6 +216,7 @@ class RewardModel:
                 obs_act_1 = self.obs_act_1[idx]
                 obs_act_2 = self.obs_act_2[idx]
                 labels = self.labels[idx]
+                weights_shuffled = self.weights[idx]  # Shuffle weights along with data
 
                 for batch in range((obs_act_1.shape[0] - 1) // self.batch_size + 1):
                     loss = 0
@@ -212,6 +227,9 @@ class RewardModel:
                         batch * self.batch_size : (batch + 1) * self.batch_size
                     ]
                     labels_batch = labels[
+                        batch * self.batch_size : (batch + 1) * self.batch_size
+                    ]
+                    weights_batch = weights_shuffled[
                         batch * self.batch_size : (batch + 1) * self.batch_size
                     ]
                     if self.data_aug == "temporal":
@@ -236,13 +254,23 @@ class RewardModel:
                     pred_seg_sum_1 = torch.sum(pred_1, dim=1)
                     pred_seg_sum_2 = torch.sum(pred_2, dim=1)
                     pred_hat = torch.cat([pred_seg_sum_1, pred_seg_sum_2], dim=-1)
-                    loss = self.loss(pred_hat, labels_batch) / labels_batch.shape[0]
-                    train_loss += loss.item() * labels_batch.shape[0]
+
+                    # Use weighted loss (supports both BT and linear_BT)
+                    if self.model_type == "BT":
+                        loss_vec = self.BT_loss_vec(pred_hat, labels_batch)  # [B]
+                    elif self.model_type == "linear_BT":
+                        loss_vec = self.linear_BT_loss_vec(pred_hat, labels_batch)  # [B]
+
+                    weights_tensor = torch.from_numpy(weights_batch).to(self.device)
+                    # Normalize by sum of weights (not batch size) to handle λ properly
+                    loss = (weights_tensor * loss_vec).sum() / weights_tensor.sum()
+                    train_loss += loss.item() * weights_tensor.sum().item()
                     loss.backward()
                     self.optimizer[member].step()
                 self.lr_scheduler[member].step()
 
-            train_loss /= obs_act_1.shape[0] * self.ensemble_num
+            # Normalize by total weights (not sample count) for proper weighted loss
+            train_loss /= self.weights.sum() * self.ensemble_num
 
             if epoch % 20 == 0:
                 wandb.log({"train_eval/loss": train_loss}, step=epoch)

@@ -40,6 +40,7 @@ class TrainConfig:
     feedback_type: str = "RLT"
     model_type: str = "BT"
     noise: float = 0.0
+    lambda_bw: float = 1.0  # Weight for worst constraints in BW feedback
     human: bool = False
     # MLP
     epochs: int = int(1e3)
@@ -120,21 +121,57 @@ def train(config: TrainConfig):
     idx_st_1 = []
     idx_st_2 = []
     labels = []
-    # construct the preference pairs
-    for single_ranked_list in multiple_ranked_list:
-        sub_index_set = []
-        for i, group in enumerate(single_ranked_list):
-            for tup in group:
-                sub_index_set.append((tup[0], i, tup[1]))
-        for i in range(len(sub_index_set)):
-            for j in range(i + 1, len(sub_index_set)):
-                idx_st_1.append(sub_index_set[i][0])
-                idx_st_2.append(sub_index_set[j][0])
-                if sub_index_set[i][1] < sub_index_set[j][1]:
-                    labels.append([0, 1])
-                else:
-                    labels.append([0.5, 0.5])
-    labels = np.array(labels)
+    weights = []
+
+    # Construct the preference pairs
+    if config.feedback_type == "BW":
+        # Best-Worst block feedback → expand to pairwise constraints (Algorithm 2)
+        blocks = multiple_ranked_list  # Actually contains blocks, not ranked lists
+        lam = config.lambda_bw  # Weight for worst constraints
+
+        for starts, best_pos, worst_pos, returns in blocks:
+            best_k = starts[best_pos]
+            worst_k = starts[worst_pos]
+
+            # Constraint 1: best > all others
+            for k in starts:
+                if k == best_k:
+                    continue
+                idx_st_1.append(k)         # worse segment
+                idx_st_2.append(best_k)    # better segment
+                labels.append([0, 1])
+                weights.append(1.0)
+
+            # Constraint 2: all others > worst
+            for k in starts:
+                if k == worst_k:
+                    continue
+                idx_st_1.append(worst_k)   # worse segment
+                idx_st_2.append(k)         # better segment
+                labels.append([0, 1])
+                weights.append(lam)
+
+        labels = np.asarray(labels, dtype=np.float32)
+        weights = np.asarray(weights, dtype=np.float32)
+
+    else:
+        # Original RLT/SeqRank handling
+        for single_ranked_list in multiple_ranked_list:
+            sub_index_set = []
+            for i, group in enumerate(single_ranked_list):
+                for tup in group:
+                    sub_index_set.append((tup[0], i, tup[1]))
+            for i in range(len(sub_index_set)):
+                for j in range(i + 1, len(sub_index_set)):
+                    idx_st_1.append(sub_index_set[i][0])
+                    idx_st_2.append(sub_index_set[j][0])
+                    if sub_index_set[i][1] < sub_index_set[j][1]:
+                        labels.append([0, 1])
+                    else:
+                        labels.append([0.5, 0.5])
+
+        labels = np.array(labels)
+        weights = np.ones(len(labels), dtype=np.float32)  # Uniform weights for non-BW
     idx_1 = [[j for j in range(i, i + config.segment_size)] for i in idx_st_1]
     idx_2 = [[j for j in range(i, i + config.segment_size)] for i in idx_st_2]
     obs_act_1 = np.concatenate(
@@ -158,7 +195,7 @@ def train(config: TrainConfig):
     wandb_init(asdict(config))
 
     dimension = obs_act_1.shape[-1]
-    reward_model = RewardModel(config, obs_act_1, obs_act_2, labels, dimension)
+    reward_model = RewardModel(config, obs_act_1, obs_act_2, labels, dimension, weights=weights)
 
     reward_model.save_test_dataset(
         test_obs_act_1, test_obs_act_2, test_labels, test_binary_labels
