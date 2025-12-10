@@ -19,10 +19,14 @@ class RewardModel:
         self.obs_act_2 = obs_act_2
         self.labels = labels
         # Weights for weighted BT loss (for BW feedback with lambda)
-        if weights is None:
+        # Handle both training mode (labels+weights provided) and inference mode (labels=None)
+        if weights is not None:
+            self.weights = weights
+        elif labels is not None:
             self.weights = np.ones(len(labels), dtype=np.float32)
         else:
-            self.weights = weights
+            # Inference mode (IQL loading model): no labels/weights needed
+            self.weights = None
         self.epochs = config.epochs
         self.batch_size = config.batch_size
         self.activation = config.activation
