@@ -18,6 +18,35 @@ def set_seed(
     torch.use_deterministic_algorithms(deterministic_torch)
 
 
+def collect_best_worst_blocks(dataset, traj_total, config):
+    # dùng q_budget làm K cho ít đổi nhất
+    K = config.q_budget
+    M = config.feedback_num  # số block queries
+    blocks = []  # list of blocks: mỗi block là list start_idx (k)
+
+    for _ in range(M):
+        starts = []
+        # sample K segment starts
+        while len(starts) < K:
+            idx = get_indices(traj_total, config)     # [[k,...,k+T-1]]
+            k = idx[0][0]
+            starts.append(k)
+
+        # tính return của từng segment
+        returns = []
+        for k in starts:
+            seg_idx = [j for j in range(k, k + config.segment_size)]
+            R = float(np.sum(dataset["rewards"][seg_idx]))
+            returns.append(R)
+
+        # chọn best/worst (có thể xử lý tie bằng threshold giống obtain_labels)
+        best_pos = int(np.argmax(returns))
+        worst_pos = int(np.argmin(returns))
+
+        blocks.append((starts, best_pos, worst_pos, returns))
+    return blocks
+
+
 def normalize_states(states: np.ndarray, mean: np.ndarray, std: np.ndarray):
     return (states - mean) / std
 
@@ -166,6 +195,11 @@ def collect_feedback(dataset, traj_total, config):
                     single_ranked_list.insert(pos, [(idx_st, reward)])
         multiple_ranked_list.append(single_ranked_list)
         return multiple_ranked_list
+    
+    elif config.feedback_type == "BW":
+        assert config.q_budget >= 2, "BW needs block size K>=2"
+
+        return collect_best_worst_blocks(dataset, traj_total, config)
     elif config.feedback_type == "SeqRank":
         print("Sequential Pairwise feedback (SeqRank)")
         single_ranked_list = []
