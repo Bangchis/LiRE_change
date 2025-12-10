@@ -58,8 +58,7 @@ echo ""
 CUDA_VISIBLE_DEVICES=0 python3 algorithms/iql.py --use_reward_model=True --config=configs/iql.yaml --env=$env \
 --data_quality=$data_quality --feedback_num=$feedback_num --q_budget=$q_budget --feedback_type=$feedback_type --model_type=$model_type \
 --threshold=$threshold --activation=$activation --epochs=$epochs --noise=$noise --seed=$seed \
---segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method \
---lambda_bw=$lambda_bw
+--segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method
 
 echo ""
 echo "================================================"
