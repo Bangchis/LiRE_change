@@ -48,3 +48,10 @@ Khắc phục: Cài theo thứ tự và ép phiên bản cụ thể.
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ================================================================
 Lưu ý: Lần đầu chạy script, hệ thống sẽ mất vài phút để Compile lock file mujoco-py.
+
+TẢI DATASET
+
+cd dataset
+bash download.sh
+
+mkdir -p dataset/MetaWorld
