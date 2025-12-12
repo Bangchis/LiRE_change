@@ -6,9 +6,11 @@ PHẦN 1: CÀI ĐẶT HỆ THỐNG (SYSTEM DEPENDENCIES)
 Lỗi thường gặp: "Missing GL/osmesa.h" hoặc "No such file directory .mujoco"
 Khắc phục: Phải cài MuJoCo binary và thư viện đồ họa Linux trước.
 
+ conda create -n LiRE python=3.9
+ conda activate LiRE
 1. Cài thư viện Linux cần thiết:
    sudo apt-get update
-   sudo apt-get install -y libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf unzip build-essential
+   sudo apt-get install -y libosmesa6-dev  libglfw3 patchelf unzip build-essential
 
 2. Tải và cài đặt MuJoCo 2.1.0 (Bắt buộc phải nằm ở /root/.mujoco):
    mkdir -p ~/.mujoco
