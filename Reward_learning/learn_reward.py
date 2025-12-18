@@ -168,6 +168,7 @@ def train(config: TrainConfig):
         wandb.log({
             'dataset/num_blocks': num_blocks,
             'dataset/block_size_K': block_size_K,
+            'dataset/segments_per_query': block_size_K,  # K segments rated per query
             'dataset/feedback_type': config.feedback_type,
             'dataset/model_type': config.model_type,
         }, step=0)
@@ -275,21 +276,25 @@ def train(config: TrainConfig):
         # Each block generates ~(2K-2) pairs: (K-1) for best + (K-1) for worst
         expected_pairs = num_blocks * (2 * block_size_K - 2)
         expansion_ratio = num_pairwise_samples / num_blocks if num_blocks > 0 else 0
+        pairwise_per_query = num_pairwise_samples / config.feedback_num if config.feedback_num > 0 else 0
         wandb.log({
             'dataset/num_blocks': num_blocks,
             'dataset/block_size_K': block_size_K,
             'dataset/num_pairwise_samples': num_pairwise_samples,
             'dataset/expansion_ratio': expansion_ratio,
             'dataset/expected_pairs': expected_pairs,
+            'dataset/pairwise_per_query': pairwise_per_query,  # Sample efficiency metric
             'dataset/feedback_type': config.feedback_type,
             'dataset/model_type': config.model_type,
         }, step=0)
     else:
         # For RLT/SeqRank: just log pairwise samples
         num_ranked_lists = len(multiple_ranked_list)
+        pairwise_per_query = num_pairwise_samples / config.feedback_num if config.feedback_num > 0 else 0
         wandb.log({
             'dataset/num_ranked_lists': num_ranked_lists,
             'dataset/num_pairwise_samples': num_pairwise_samples,
+            'dataset/pairwise_per_query': pairwise_per_query,  # Sample efficiency metric
             'dataset/feedback_type': config.feedback_type,
             'dataset/model_type': config.model_type,
         }, step=0)

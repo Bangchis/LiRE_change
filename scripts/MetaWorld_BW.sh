@@ -3,11 +3,11 @@
 # Based on MetaWorld.sh but optimized for BW feedback method
 
 env=${ENV_NAME:-metaworld_button-press-topdown-v2}   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
-data_quality=1.0    # data quality.
+data_quality=5.0    # data quality.
                     # The lower the quality, the more random policy data, and the higher the quality, the more expert policy data. (maximum is 10.0)
 feedback_num=500    # M = number of block queries (total feedback number)
                     # Note: BW generates ~M*(2K-2) pairwise comparisons from M blocks
-q_budget=20         # K = block size (number of segments per block)
+q_budget=4         # K = block size (number of segments per block)
                     # For BW: recommended values are 10-30. Must be >= 2.
                     # This is different from RLT where q_budget means max segments per ranked list.
 feedback_type=BW    # Best-Worst block feedback (new method)

@@ -1,5 +1,5 @@
 env=${ENV_NAME:-metaworld_button-press-topdown-v2}   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
-data_quality=1.0    # data quality.
+data_quality=5.0    # data quality.
                     # The lower the quality, the more random policy data, and the higher the quality, the more expert policy data. (maximum is 10.0)
 feedback_num=500    # total feedback number (we use 500, 1000 feedback in the paper)
 q_budget=100        # query budget (we use 100 in the paper)
