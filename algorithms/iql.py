@@ -80,6 +80,7 @@ class TrainConfig:
     feedback_type: str = "RLT"
     model_type: str = "BT"
     noise: float = 0.0
+    method_tag: str = "RLT"  # Method identifier for wandb logging: "RLT", "BW", or "BW_PL"
     human: bool = False
     # Wandb logging
     project: str = "LiRE"
@@ -88,14 +89,16 @@ class TrainConfig:
 
     def __post_init__(self):
         if self.use_reward_model:
-            self.group = f"{self.env}_data_{self.data_quality}_fn_{self.feedback_num}_qb_{self.q_budget}_ft_{self.feedback_type}_m_{self.model_type}_n_{self.noise}_e_{self.epochs}_trivial_{self.trivial_reward}"
+            # Clear naming with method tag for easy sorting and identification
+            self.group = f"IQL_{self.method_tag}_{self.model_type}_{self.env}_data_{self.data_quality}_fn_{self.feedback_num}_qb_{self.q_budget}_n_{self.noise}"
             checkpoint_name = f"{self.name}/{self.env}/data_{self.data_quality}/fn_{self.feedback_num}/qb_{self.q_budget}/ft_{self.feedback_type}/m_{self.model_type}/n_{self.noise}/e_{self.epochs}/seed_{self.seed}"
         else:
             self.group = f"IQL/{self.env}_quality_{self.data_quality}_trivial_{self.trivial_reward}"
             checkpoint_name = f"{self.name}/{self.env}/quality_{self.data_quality}_trivial_{self.trivial_reward}/seed_{self.seed}_{str(uuid.uuid4())[:8]}"
         if self.checkpoints_path is not None:
             self.checkpoints_path = os.path.join(self.checkpoints_path, checkpoint_name)
-        self.name = f"seed_{self.seed}_{str(uuid.uuid4())[:8]}"
+        # Name includes seed and model type for clarity
+        self.name = f"seed_{self.seed}_{self.model_type}" if self.use_reward_model else f"seed_{self.seed}_{str(uuid.uuid4())[:8]}"
 
 
 def soft_update(target: nn.Module, source: nn.Module, tau: float):
@@ -235,6 +238,7 @@ def set_seed(
 
 def wandb_init(config: dict) -> None:
     wandb.init(
+        mode="online",
         config=config,
         project=config["project"],
         group=config["group"],

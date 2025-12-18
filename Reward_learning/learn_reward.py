@@ -41,6 +41,7 @@ class TrainConfig:
     model_type: str = "BT"
     noise: float = 0.0
     lambda_bw: float = 1.0  # Weight for worst constraints in BW feedback
+    method_tag: str = "RLT"  # Method identifier for wandb logging: "RLT", "BW", or "BW_PL"
     human: bool = False
     # MLP
     epochs: int = int(1e3)
@@ -56,7 +57,8 @@ class TrainConfig:
     name: str = "Reward"
 
     def __post_init__(self):
-        self.group = f"{self.env}_data_{self.data_quality}_fn_{self.feedback_num}_qb_{self.q_budget}_ft_{self.feedback_type}_m_{self.model_type}_e_{self.epochs}_n_{self.noise}"
+        # Clear naming with method tag for easy sorting and identification
+        self.group = f"{self.method_tag}_{self.model_type}_{self.env}_data_{self.data_quality}_fn_{self.feedback_num}_qb_{self.q_budget}_n_{self.noise}"
         checkpoints_name = f"{self.name}/{self.env}/data_{self.data_quality}/fn_{self.feedback_num}/qb_{self.q_budget}/ft_{self.feedback_type}/m_{self.model_type}/n_{self.noise}/e_{self.epochs}/s_{self.seed}"
         if self.checkpoints_path is not None:
             self.checkpoints_path = os.path.join(
@@ -64,12 +66,13 @@ class TrainConfig:
             )
             if not os.path.exists(self.checkpoints_path):
                 os.makedirs(self.checkpoints_path)
-        self.name = f"seed_{self.seed}"
+        # Name includes seed and model type for clarity
+        self.name = f"seed_{self.seed}_{self.model_type}"
 
 
 def wandb_init(config: dict) -> None:
     wandb.init(
-        mode="offline",
+        mode="online",
         config=config,
         project=config["project"],
         group=config["group"],
@@ -158,6 +161,17 @@ def train(config: TrainConfig):
         )
 
         wandb_init(asdict(config))
+
+        # Log dataset statistics for BW+PL
+        num_blocks = len(blocks)
+        block_size_K = config.q_budget
+        wandb.log({
+            'dataset/num_blocks': num_blocks,
+            'dataset/block_size_K': block_size_K,
+            'dataset/feedback_type': config.feedback_type,
+            'dataset/model_type': config.model_type,
+        }, step=0)
+
         dimension = block_obs_act.shape[-1]
 
         # Create RewardModel with blocks (not pairs)
@@ -251,6 +265,34 @@ def train(config: TrainConfig):
     )
 
     wandb_init(asdict(config))
+
+    # Log dataset statistics
+    num_pairwise_samples = len(labels)
+    if config.feedback_type == "BW":
+        # For BW: log blocks and expansion ratio
+        num_blocks = len(multiple_ranked_list)
+        block_size_K = config.q_budget
+        # Each block generates ~(2K-2) pairs: (K-1) for best + (K-1) for worst
+        expected_pairs = num_blocks * (2 * block_size_K - 2)
+        expansion_ratio = num_pairwise_samples / num_blocks if num_blocks > 0 else 0
+        wandb.log({
+            'dataset/num_blocks': num_blocks,
+            'dataset/block_size_K': block_size_K,
+            'dataset/num_pairwise_samples': num_pairwise_samples,
+            'dataset/expansion_ratio': expansion_ratio,
+            'dataset/expected_pairs': expected_pairs,
+            'dataset/feedback_type': config.feedback_type,
+            'dataset/model_type': config.model_type,
+        }, step=0)
+    else:
+        # For RLT/SeqRank: just log pairwise samples
+        num_ranked_lists = len(multiple_ranked_list)
+        wandb.log({
+            'dataset/num_ranked_lists': num_ranked_lists,
+            'dataset/num_pairwise_samples': num_pairwise_samples,
+            'dataset/feedback_type': config.feedback_type,
+            'dataset/model_type': config.model_type,
+        }, step=0)
 
     dimension = obs_act_1.shape[-1]
     reward_model = RewardModel(config, obs_act_1, obs_act_2, labels, dimension, weights=weights)

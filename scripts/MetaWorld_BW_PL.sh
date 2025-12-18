@@ -2,7 +2,7 @@
 # MetaWorld Best-Worst (BW) + Plackett-Luce (PL) Experiment Script
 # Uses BW blocks but trains reward model directly with Plackett-Luce loss (no pairwise expansion)
 
-env=metaworld_button-press-topdown-v2   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
+env=${ENV_NAME:-metaworld_button-press-topdown-v2}   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
 data_quality=1.0    # data quality.
                     # The lower the quality, the more random policy data, and the higher the quality, the more expert policy data. (maximum is 10.0)
 feedback_num=500    # M = number of block queries (total feedback number)
@@ -12,10 +12,11 @@ q_budget=20         # K = block size (number of segments per block)
 feedback_type=BW    # Best-Worst block feedback
 
 # --- IMPORTANT: PL model types (no pairwise expansion) ---
-model_type=PL       # ["PL", "linear_PL"]
+model_type=${MODEL_TYPE:-PL}       # ["PL", "linear_PL"]
                     # "PL": Exponential Plackett-Luce (f = exp(s))
                     # "linear_PL": Linear Plackett-Luce (f = s + const)
                     # Both train directly on blocks using Algorithm 1 (no pairwise expansion)
+method_tag=${METHOD_NAME:-BW_PL}   # Method identifier for wandb logging
 
 lambda_bw=1.0       # λ in Algorithm 1: weight for worst term
                     # lambda_bw=1.0 means equal weight for best and worst terms
@@ -52,7 +53,7 @@ CUDA_VISIBLE_DEVICES=0 python3 Reward_learning/learn_reward.py --config=configs/
 --data_quality=$data_quality --feedback_num=$feedback_num --q_budget=$q_budget --feedback_type=$feedback_type --model_type=$model_type \
 --threshold=$threshold --activation=$activation --epochs=$epochs --noise=$noise --seed=$seed \
 --segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method --batch_size=$batch_size \
---lambda_bw=$lambda_bw
+--lambda_bw=$lambda_bw --method_tag=$method_tag
 
 
 # Offline IQL with learned reward model
@@ -65,7 +66,8 @@ echo ""
 CUDA_VISIBLE_DEVICES=0 python3 algorithms/iql.py --use_reward_model=True --config=configs/iql.yaml --env=$env \
 --data_quality=$data_quality --feedback_num=$feedback_num --q_budget=$q_budget --feedback_type=$feedback_type --model_type=$model_type \
 --threshold=$threshold --activation=$activation --epochs=$epochs --noise=$noise --seed=$seed \
---segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method
+--segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method \
+--method_tag=$method_tag
 
 echo ""
 echo "================================================"

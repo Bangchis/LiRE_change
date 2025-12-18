@@ -2,7 +2,7 @@
 # MetaWorld Best-Worst (BW) Feedback Experiment Script
 # Based on MetaWorld.sh but optimized for BW feedback method
 
-env=metaworld_button-press-topdown-v2   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
+env=${ENV_NAME:-metaworld_button-press-topdown-v2}   # ["metaworld_button-press-topdown-v2", "dmc_cheetah-run"]: env name
 data_quality=1.0    # data quality.
                     # The lower the quality, the more random policy data, and the higher the quality, the more expert policy data. (maximum is 10.0)
 feedback_num=500    # M = number of block queries (total feedback number)
@@ -11,7 +11,8 @@ q_budget=20         # K = block size (number of segments per block)
                     # For BW: recommended values are 10-30. Must be >= 2.
                     # This is different from RLT where q_budget means max segments per ranked list.
 feedback_type=BW    # Best-Worst block feedback (new method)
-model_type=BT       # ["BT", "linear_BT"]: BT means exponential bradley-terry model, and linear_BT use linear score function
+model_type=${MODEL_TYPE:-BT}       # ["BT", "linear_BT"]: BT means exponential bradley-terry model, and linear_BT use linear score function
+method_tag=${METHOD_NAME:-BW}      # Method identifier for wandb logging
 lambda_bw=1.0       # Weight for worst constraints in BW feedback
                     # lambda_bw=1.0 means equal weight for "best > others" and "others > worst"
                     # Try values: 0.5, 1.0, 2.0 for experiments
@@ -45,7 +46,7 @@ CUDA_VISIBLE_DEVICES=0 python3 Reward_learning/learn_reward.py --config=configs/
 --data_quality=$data_quality --feedback_num=$feedback_num --q_budget=$q_budget --feedback_type=$feedback_type --model_type=$model_type \
 --threshold=$threshold --activation=$activation --epochs=$epochs --noise=$noise --seed=$seed \
 --segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method --batch_size=$batch_size \
---lambda_bw=$lambda_bw
+--lambda_bw=$lambda_bw --method_tag=$method_tag
 
 
 # Offline IQL with learned reward model
@@ -58,7 +59,8 @@ echo ""
 CUDA_VISIBLE_DEVICES=0 python3 algorithms/iql.py --use_reward_model=True --config=configs/iql.yaml --env=$env \
 --data_quality=$data_quality --feedback_num=$feedback_num --q_budget=$q_budget --feedback_type=$feedback_type --model_type=$model_type \
 --threshold=$threshold --activation=$activation --epochs=$epochs --noise=$noise --seed=$seed \
---segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method
+--segment_size=$segment_size --data_aug=$data_aug --ensemble_num=$ensemble_num --ensemble_method=$ensemble_method \
+--method_tag=$method_tag
 
 echo ""
 echo "================================================"
