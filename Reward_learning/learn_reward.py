@@ -118,6 +118,64 @@ def train(config: TrainConfig):
     elif config.human == True:
         multiple_ranked_list = collect_human_feedback(dataset, config)
 
+    # ---- NEW: BW + PL (Plackett-Luce Algorithm 1) ----
+    # If using PL models, train directly on blocks without pairwise expansion
+    if config.feedback_type == "BW" and config.model_type in ["PL", "linear_PL"]:
+        blocks = multiple_ranked_list  # list of (starts, best_pos, worst_pos, returns)
+        K = config.q_budget
+        T = config.segment_size
+
+        block_obs_act = []
+        best_pos_list = []
+        worst_pos_list = []
+
+        for starts, bpos, wpos, _ in blocks:
+            # Build indices for all K segments in this block: [K, T]
+            idx = [[j for j in range(k, k + T)] for k in starts]
+            # Concatenate observations and actions: [K, T, obs_dim+act_dim]
+            obs_act = np.concatenate(
+                (dataset["observations"][idx], dataset["actions"][idx]),
+                axis=-1
+            )
+            block_obs_act.append(obs_act)
+            best_pos_list.append(bpos)
+            worst_pos_list.append(wpos)
+
+        block_obs_act = np.asarray(block_obs_act, dtype=np.float32)  # [M, K, T, D]
+        best_pos = np.asarray(best_pos_list, dtype=np.int64)         # [M]
+        worst_pos = np.asarray(worst_pos_list, dtype=np.int64)       # [M]
+
+        # Create test set (pairwise, for evaluation)
+        test_feedback_num = 5000
+        test_obs_act_1, test_obs_act_2, test_labels, test_binary_labels = (
+            consist_test_dataset(
+                dataset,
+                test_feedback_num,
+                traj_total,
+                segment_size=config.segment_size,
+                threshold=config.threshold,
+            )
+        )
+
+        wandb_init(asdict(config))
+        dimension = block_obs_act.shape[-1]
+
+        # Create RewardModel with blocks (not pairs)
+        reward_model = RewardModel(
+            config,
+            obs_act_1=None, obs_act_2=None, labels=None,
+            dimension=dimension,
+            weights=None,
+            blocks=block_obs_act, best_pos=best_pos, worst_pos=worst_pos
+        )
+        reward_model.save_test_dataset(
+            test_obs_act_1, test_obs_act_2, test_labels, test_binary_labels
+        )
+        reward_model.train_model()
+        reward_model.save_model(config.checkpoints_path)
+        return
+    # ---- END NEW: BW + PL ----
+
     idx_st_1 = []
     idx_st_2 = []
     labels = []

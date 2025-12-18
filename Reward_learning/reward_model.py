@@ -10,7 +10,8 @@ import torch.optim as optim
 
 
 class RewardModel:
-    def __init__(self, config, obs_act_1, obs_act_2, labels, dimension, weights=None):
+    def __init__(self, config, obs_act_1, obs_act_2, labels, dimension, weights=None,
+                 blocks=None, best_pos=None, worst_pos=None):
         self.env = config.env
         self.config = config
         self.dimension = dimension
@@ -27,6 +28,12 @@ class RewardModel:
         else:
             # Inference mode (IQL loading model): no labels/weights needed
             self.weights = None
+
+        # NEW: PL model data (blocks instead of pairs)
+        self.blocks = blocks          # [M, K, T, D] for PL training
+        self.best_pos = best_pos      # [M] - best segment index per block
+        self.worst_pos = worst_pos    # [M] - worst segment index per block
+
         self.epochs = config.epochs
         self.batch_size = config.batch_size
         self.activation = config.activation
@@ -42,6 +49,9 @@ class RewardModel:
             self.loss = self.BT_loss
         elif self.model_type == "linear_BT":
             self.loss = self.linear_BT_loss
+        elif self.model_type in ["PL", "linear_PL"]:
+            # PL models use dedicated loss function in training loop
+            self.loss = None
         self.ensemble_num = config.ensemble_num
         self.ensemble_method = config.ensemble_method
         self.paramlist = []
@@ -133,6 +143,52 @@ class RewardModel:
         # Wrapper for backward compatibility
         return self.linear_BT_loss_vec(pred_hat, label).sum()
 
+    def bw_pl_loss_vec(self, seg_scores, best_pos, worst_pos, lam, mode):
+        """
+        Plackett-Luce loss for Best-Worst blocks (Algorithm 1).
+
+        Args:
+            seg_scores: [B, K] - predicted segment returns (sum over timesteps)
+            best_pos: [B] - index of best segment in each block
+            worst_pos: [B] - index of worst segment in each block
+            lam: float - weight for worst term (lambda_bw)
+            mode: str - "PL" (exponential) or "linear_PL"
+
+        Returns:
+            [B] - per-block loss
+        """
+        if mode == "PL":
+            # Exponential PL: f(σ) = exp(s) → utility is exponential
+            # P(best) = exp(s_best) / sum(exp(s)) = softmax(s)[best]
+            # -log P(best) = cross_entropy(s, best)
+            loss_best = F.cross_entropy(seg_scores, best_pos, reduction="none")  # [B]
+
+            # P(worst) with inverse utility: 1/exp(s) = exp(-s)
+            # P(worst) = exp(-s_worst) / sum(exp(-s)) = softmax(-s)[worst]
+            # -log P(worst) = cross_entropy(-s, worst)
+            loss_worst = F.cross_entropy(-seg_scores, worst_pos, reduction="none")  # [B]
+
+        else:  # mode == "linear_PL"
+            # Linear PL: f(σ) = s + const (ensure positive, NO log of utility!)
+            u = seg_scores + self.segment_size + 1e-5  # [B, K] - utilities (all positive)
+
+            # P(best) = u_best / sum(u)
+            # Gather best utilities: [B, K] → [B, 1] → [B]
+            u_best = u.gather(1, best_pos.unsqueeze(1)).squeeze(1)  # [B]
+            u_sum = u.sum(dim=1)  # [B]
+            p_best = u_best / u_sum  # [B]
+            loss_best = -torch.log(p_best + 1e-8)  # [B]
+
+            # P(worst) with inverse utility: (1/u_worst) / sum(1/u)
+            u_inv = 1.0 / u  # [B, K] - inverse utilities for "less preferred"
+            u_inv_worst = u_inv.gather(1, worst_pos.unsqueeze(1)).squeeze(1)  # [B]
+            u_inv_sum = u_inv.sum(dim=1)  # [B]
+            p_worst = u_inv_worst / u_inv_sum  # [B]
+            loss_worst = -torch.log(p_worst + 1e-8)  # [B]
+
+        # Combined loss: L = -log P(best) - λ * log P(worst)
+        return loss_best + lam * loss_worst  # [B]
+
     def save_model(self, path):
         for member in range(self.ensemble_num):
             # join path + member number
@@ -187,10 +243,19 @@ class RewardModel:
                 eval_acc += torch.sum(
                     pred_labels == torch.argmax(binary_labels_batch, dim=-1)
                 ).item()
-                eval_loss += self.loss(pred_hat, labels_batch).item()
-        eval_loss /= obs_act_1.shape[0]
+                # For PL models, self.loss is None (only compute accuracy)
+                if self.loss is not None:
+                    eval_loss += self.loss(pred_hat, labels_batch).item()
+
         eval_acc /= float(obs_act_1.shape[0])
-        wandb.log({name + "/loss": eval_loss, name + "/acc": eval_acc}, step=epoch)
+
+        # Log metrics (only log loss if computed)
+        if self.loss is not None:
+            eval_loss /= obs_act_1.shape[0]
+            wandb.log({name + "/loss": eval_loss, name + "/acc": eval_acc}, step=epoch)
+        else:
+            # PL models: only log accuracy
+            wandb.log({name + "/acc": eval_acc}, step=epoch)
 
     def train_model(self):
         self.ensemble_model = self.construct_ensemble()
@@ -206,6 +271,73 @@ class RewardModel:
                     gamma=0.9,
                 )
             )
+
+        # ---- NEW: BW + PL training (direct on blocks, no pairwise) ----
+        if self.feedback_type == "BW" and self.model_type in ["PL", "linear_PL"]:
+            blocks = torch.from_numpy(self.blocks).float().to(self.device)      # [M, K, T, D]
+            best_pos = torch.from_numpy(self.best_pos).long().to(self.device)   # [M]
+            worst_pos = torch.from_numpy(self.worst_pos).long().to(self.device) # [M]
+            M, K, T, D = blocks.shape
+            lam = float(getattr(self.config, "lambda_bw", 1.0))
+
+            for epoch in tqdm.tqdm(range(self.epochs)):
+                # Shuffle blocks at the start of each epoch
+                idx = torch.randperm(M, device=self.device)
+                blocks_shuf = blocks[idx]
+                best_shuf = best_pos[idx]
+                worst_shuf = worst_pos[idx]
+
+                train_loss = 0.0
+                for member in range(self.ensemble_num):
+                    self.net = self.ensemble_model[member]
+                    self.net.train()
+
+                    for b in range((M - 1) // self.batch_size + 1):
+                        # Get batch of blocks
+                        bb = blocks_shuf[b * self.batch_size : (b + 1) * self.batch_size]  # [B, K, T, D]
+                        bp = best_shuf[b * self.batch_size : (b + 1) * self.batch_size]    # [B]
+                        wp = worst_shuf[b * self.batch_size : (b + 1) * self.batch_size]   # [B]
+
+                        if bb.shape[0] == 0:  # Skip empty batches
+                            continue
+
+                        self.optimizer[member].zero_grad()
+
+                        # Forward pass: compute rewards for all K segments in each block
+                        # Input: [B, K, T, D] → Output: [B, K, T, 1]
+                        pred = self.net(bb)                          # [B, K, T, 1]
+                        seg_scores = pred.sum(dim=2).squeeze(-1)     # [B, K] - sum over time
+
+                        # Compute PL loss
+                        loss_vec = self.bw_pl_loss_vec(
+                            seg_scores, bp, wp, lam, self.model_type
+                        )  # [B]
+                        loss = loss_vec.mean()
+
+                        loss.backward()
+                        self.optimizer[member].step()
+
+                        train_loss += loss.item() * bb.shape[0]
+
+                    self.lr_scheduler[member].step()
+
+                train_loss /= (M * self.ensemble_num)
+
+                if epoch % 20 == 0:
+                    wandb.log({"train_eval/loss": train_loss}, step=epoch)
+
+                # Evaluate on test set (pairwise) every 100 epochs
+                if epoch % 100 == 0:
+                    self.eval(
+                        self.test_obs_act_1,
+                        self.test_obs_act_2,
+                        self.test_labels,
+                        self.test_binary_labels,
+                        "test_eval",
+                        epoch,
+                    )
+            return
+        # ---- END NEW: BW + PL training ----
 
         self.obs_act_1 = torch.from_numpy(self.obs_act_1).float().to(self.device)
         self.obs_act_2 = torch.from_numpy(self.obs_act_2).float().to(self.device)

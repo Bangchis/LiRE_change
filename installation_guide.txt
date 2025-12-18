@@ -49,9 +49,45 @@ Khắc phục: Cài theo thứ tự và ép phiên bản cụ thể.
 ================================================================
 Lưu ý: Lần đầu chạy script, hệ thống sẽ mất vài phút để Compile lock file mujoco-py.
 
+
+
+
 TẢI DATASET
 
 cd dataset
+mkdir -p dataset/MetaWorld
 bash download.sh
 
-mkdir -p dataset/MetaWorld
+sau đó nhớ đưa bộ dữ liệu ra  ngoài không là lại ngu đấy
+
+
+
+
+#lệnh chạy tổng
+
+conda create -n LiRE python=3.9
+conda activate LiRE
+sudo apt-get update
+sudo apt-get install -y libosmesa6-dev  libglfw3 patchelf unzip build-essential
+mkdir -p ~/.mujoco
+wget https://github.com/deepmind/mujoco/releases/download/2.1.0/mujoco210-linux-x86_64.tar.gz
+tar -xvzf mujoco210-linux-x86_64.tar.gz -C ~/.mujoco/
+rm mujoco210-linux-x86_64.tar.gz
+echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin' >> ~/.bashrc
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
+pip install --upgrade pip setuptools wheel
+pip install "numpy<2.0"       
+pip install "cython<3"  
+pip install mujoco==2.3.7
+pip install dm_control==1.0.14  
+pip install git+https://github.com/Farama-Foundation/Metaworld.git@v2.0.0
+pip install git+https://github.com/denisyarats/dmc2gym.git
+pip install -r requirements.txt
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+
+############
+lệnh chạy metaworld:
+ bash scripts/MetaWorld.sh
+ bash scripts/MetaWorld_BW.sh
+ bash scripts/MetaWorld_LT.sh
