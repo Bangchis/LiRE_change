@@ -1,0 +1,67 @@
+# =============================================================================
+# Heap + BT — Tournament Max-Heap Forest with Bradley-Terry Loss
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_heap_BT.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   Xay rung cay giai dau (forest of tournament max-heaps):
+#   1. Chia segments thanh nhom K, Oracle chon segment tot nhat (parent)
+#   2. Parent thang → len vong tiep, children bi loai
+#   3. Lap lai cho den khi het budget hoac chi con < K segments
+#   4. Xay nhieu cay doc lap (num_heaps) de tang da dang mau
+#
+#   Sau do MO RONG thanh cap pairwise (parent > child) va train bang BT loss.
+#   Co xu ly TIE: neu |return_parent - return_child| <= gap → label [0.5, 0.5]
+#
+#   Builds a forest of tournament trees. Each group: Oracle picks best from K.
+#   Winners advance to next round. Expanded to pairwise pairs with tie handling.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: heap         # Tournament Max-Heap: xay cay giai dau nhieu tang
+q_budget: 5                 # K=5: moi nhom co 5 segments thi dau, chon 1 best
+                            # K=5 → moi nhom tao 4 cap pairwise (parent > 4 children)
+                            # K=10 → moi nhom tao 9 cap pairwise
+                            # K lon → it vong giai dau hon, nhieu cap/query, nhung Oracle kho chon
+model_type: BT              # Bradley-Terry: mo rong (parent, children) thanh cap pairwise
+                            # "BT" = exponential: P(parent>child) = exp(r(p)) / (exp(r(p)) + exp(r(c)))
+                            # "linear_BT" = linear: f(x) = r(x) + c
+num_heaps: 5                # So cay heap doc lap trong forest
+                            # num_heaps=1: 1 cay sau (de overfit o root)
+                            # num_heaps=5: 5 cay nong hon (da dang mau, khuyen dung)
+                            # num_heaps=10: 10 cay rat nong
+                            # queries_per_heap = feedback_num // num_heaps
+feedback_num: 500           # M = tong query budget chia deu cho cac heaps
+                            # Voi K=5, M=500: pool ~= 500*(5-1) = 2000 segments
+                            # Tong cap pairwise ~= 500 * (K-1) = 2000 cap
+method_tag: heap            # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0           # 1.0 (random) → 10.0 (expert)
+segment_size: 25            # T = 25 buoc moi segment
+threshold: 0.5              # Nguong tie cho ca Oracle (chon best) va pairwise expansion
+                            # gap = segment_size * threshold = 25 * 0.5 = 12.5
+                            # Neu |R_parent - R_child| <= 12.5 → tie [0.5, 0.5]
+noise: 0.0                  # Xac suat dao nhan
+normalize: true
+data_aug: none
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh            # Bounded reward → on dinh cho IQL
+ensemble_num: 3
+ensemble_method: mean
+
+# --- Khong dung cho heap (chi dung cho BW) ---
+lambda_bw: 1.0

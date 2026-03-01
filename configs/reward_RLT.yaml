@@ -1,0 +1,51 @@
+# =============================================================================
+# RLT — LiRE (Listwise Reward Estimation via Ranked List)
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_RLT.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   LiRE la phuong phap chinh cua paper: xay dung danh sach xep hang (ranked list)
+#   bang binary search. Moi ranked list chua toi da K=100 segments.
+#   Tu 1 ranked list dai, tao ra rat nhieu cap so sanh → hieu qua hon MR.
+#   LiRE builds ranked lists via binary search. Each list holds up to K=100 segments,
+#   generating many pairwise comparisons from few queries.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: RLT          # Ranked List of Trajectories: chen segment vao danh sach bang binary search
+q_budget: 100               # K=100: moi ranked list chua toi da 100 segments
+                            # Binary search → ~log2(K) queries de chen 1 segment
+                            # K lon → nhieu cap so sanh / query → hieu qua mau tot hon
+model_type: linear_BT       # Linear Bradley-Terry: f(x) = r(x) + c (khong dung exp)
+                            # On dinh hon "BT" khi ranked list dai (nhieu cap)
+                            # Paper khuyen dung linear_BT cho RLT
+feedback_num: 500           # M = tong so query (500 queries tao ~5 ranked lists x 100 segments)
+method_tag: RLT             # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0           # 1.0 (random) → 10.0 (expert)
+segment_size: 25            # T = 25 buoc moi segment
+threshold: 0.5              # Nguong tie
+noise: 0.0                  # 0.0 = nhan sach
+normalize: true
+data_aug: none              # "temporal" de cat ngau nhien segment (SURF augmentation)
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh            # Bounded reward
+ensemble_num: 3
+ensemble_method: mean
+
+# --- Khong dung cho RLT ---
+lambda_bw: 1.0

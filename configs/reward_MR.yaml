@@ -1,0 +1,53 @@
+# =============================================================================
+# MR — Independent Pairwise Baseline (Marginal Ranking)
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_MR.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   MR la baseline don gian nhat: moi query chi so sanh 1 cap segment doc lap.
+#   Dung RLT framework voi q_budget=1 nen moi query chi tao 1 cap pairwise.
+#   MR is the simplest baseline: each query compares one independent pair of segments.
+# =============================================================================
+
+# --- Thiet bi / Device ---
+device: cuda                # "cuda" hoac "cpu"
+
+# --- Moi truong / Environment ---
+env: metaworld_button-press-topdown-v2   # Ten moi truong (metaworld_* hoac dmc_*)
+seed: 0                     # Random seed de tai lap ket qua
+checkpoints_path: logs/     # Thu muc luu model
+load_model: null            # Duong dan load model cu (null = train tu dau)
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: RLT          # Dung framework RLT, nhung q_budget=1 = independent pairwise
+q_budget: 1                 # K=1: moi query chi so sanh 1 cap → do la MR
+                            # (K=1 turns RLT into independent pairwise sampling)
+model_type: BT              # Bradley-Terry exponential: P(A>B) = exp(r(A)) / (exp(r(A)) + exp(r(B)))
+                            # "BT" = exponential score, "linear_BT" = linear score f(x) = r(x) + c
+feedback_num: 500           # M = tong so query (500 query = 500 cap pairwise)
+method_tag: MR              # Tag hien thi tren wandb de phan biet thi nghiem
+
+# --- Du lieu / Data ---
+data_quality: 5.0           # Chat luong dataset: 1.0 (random) → 10.0 (expert)
+                            # Thuc te dung: data_quality * 100,000 transitions
+segment_size: 25            # T = do dai moi doan trajectory (25 buoc)
+threshold: 0.5              # Nguong tie: neu |R1-R2| <= segment_size * threshold → hoa (label [0.5, 0.5])
+                            # Threshold lon hon → nhieu tie hon
+noise: 0.0                  # Xac suat dao nhan (0.0 = khong nhieu, 0.1 = 10% nhan sai)
+normalize: true             # Chuan hoa observations (mean=0, std=1)
+data_aug: none              # Tang cuong du lieu: "none" hoac "temporal" (cat ngau nhien segment)
+human: false                # true = dung feedback nguoi that, false = oracle tu ground-truth reward
+
+# --- Kien truc MLP / Model Architecture ---
+epochs: 300                 # So epoch huan luyen (paper dung 300, co the tang len 5000)
+batch_size: 512             # Kich thuoc batch
+lr: 1e-3                    # Learning rate
+hidden_sizes: 128           # So neuron moi hidden layer
+activation: tanh            # Ham kich hoat cuoi cung: "tanh" (bounded reward [-1,1])
+                            # Lua chon: "tanh", "sigmoid", "relu", "leaky_relu", "gelu", "none"
+ensemble_num: 3             # So model trong ensemble (trung binh de giam variance)
+ensemble_method: mean       # Cach gop ensemble: "mean", "min", "uwo" (mean - 5*std)
+
+# --- Tham so khong dung cho MR nhung can khai bao ---
+lambda_bw: 1.0              # Chi dung cho BW feedback (khong anh huong MR)

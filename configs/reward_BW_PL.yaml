@@ -1,0 +1,52 @@
+# =============================================================================
+# BW + PL — Best-Worst Block Feedback with Plackett-Luce Loss
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_BW_PL.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   Giong BW nhung KHONG mo rong thanh cap pairwise.
+#   Train truc tiep tren block K segments bang Plackett-Luce loss:
+#     L = -log P(best) - lambda * log P(worst)
+#   Hieu qua mau tot hon BW+BT vi giu nguyen cau truc block.
+#   Same as BW but trains directly on blocks using Plackett-Luce loss
+#   instead of expanding to pairwise constraints. More sample-efficient.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: BW           # Best-Worst blocks (du lieu giong BW+BT)
+q_budget: 4                 # K=4: moi block co 4 segments
+model_type: PL              # Plackett-Luce exponential: P(best) = exp(r(best)) / sum(exp(r(x)))
+                            # "PL" = exponential score function
+                            # "linear_PL" = linear score function f(x) = r(x) + c
+                            # PL train truc tiep tren block [M, K, T, D] → khong can mo rong cap
+lambda_bw: 1.0              # Lambda (λ): trong so cho worst term trong PL loss
+                            # L = -log P(best) - λ * log P(worst)
+                            # λ=0: chi dung best (bo qua worst)
+                            # λ=1: can bang best va worst
+feedback_num: 500           # M = so block queries
+method_tag: BW_PL           # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0
+segment_size: 25
+threshold: 0.5
+noise: 0.0
+normalize: true
+data_aug: none
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512             # So blocks moi batch (khong phai so cap)
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh
+ensemble_num: 3
+ensemble_method: mean

@@ -1,0 +1,48 @@
+# =============================================================================
+# SeqRank — Sequential Pairwise Feedback
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_SeqRank.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   SeqRank so sanh tuan tu: moi segment moi duoc so voi segment truoc do.
+#   Neu xu huong (tang/giam) khong doi → tiep tuc mo rong ranked list.
+#   Neu xu huong dao → bat dau ranked list moi.
+#   Tao nhieu ranked lists nho thay vi 1 list dai nhu RLT.
+#   SeqRank compares each new segment against the previous one sequentially.
+#   It builds multiple short ranked lists based on trend direction.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: SeqRank      # Sequential pairwise: so sanh tuan tu
+q_budget: 1                 # K=1: moi query la 1 cap pairwise (giong MR nhung tuan tu)
+model_type: BT              # Bradley-Terry exponential
+feedback_num: 500           # M = tong so query
+method_tag: SeqRank         # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0
+segment_size: 25
+threshold: 0.5
+noise: 0.0
+normalize: true
+data_aug: none
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh
+ensemble_num: 3
+ensemble_method: mean
+
+# --- Khong dung cho SeqRank ---
+lambda_bw: 1.0

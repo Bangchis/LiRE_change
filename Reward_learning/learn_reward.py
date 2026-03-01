@@ -41,7 +41,8 @@ class TrainConfig:
     model_type: str = "BT"
     noise: float = 0.0
     lambda_bw: float = 1.0  # Weight for worst constraints in BW feedback
-    method_tag: str = "RLT"  # Method identifier for wandb logging: "RLT", "BW", or "BW_PL"
+    num_heaps: int = 5  # Number of independent heaps in forest (only for heap feedback)
+    method_tag: str = "RLT"  # Method identifier for wandb logging: "RLT", "BW", "BW_PL", or "heap"
     human: bool = False
     # MLP
     epochs: int = int(1e3)
@@ -116,6 +117,8 @@ def train(config: TrainConfig):
     )
 
     assert config.q_budget >= 1
+    if config.feedback_type == "heap":
+        assert config.q_budget >= 2, "Heap needs group size K >= 2"
     if config.human == False:
         multiple_ranked_list = collect_feedback(dataset, traj_total, config)
     elif config.human == True:
@@ -191,6 +194,62 @@ def train(config: TrainConfig):
         return
     # ---- END NEW: BW + PL ----
 
+    # ---- Heap + PL (listwise, best-only) ----
+    if config.feedback_type == "heap" and config.model_type in ["PL", "linear_PL"]:
+        heap_groups = multiple_ranked_list  # list of (parent_start, parent_return, child_starts, child_returns)
+        K = config.q_budget
+        T = config.segment_size
+
+        block_obs_act = []
+        best_pos_list = []
+
+        for parent_start, parent_return, child_starts, child_returns in heap_groups:
+            # Parent at position 0, children at 1..K-1
+            all_starts = [parent_start] + child_starts
+            idx = [[j for j in range(k, k + T)] for k in all_starts]
+            obs_act = np.concatenate(
+                (dataset["observations"][idx], dataset["actions"][idx]),
+                axis=-1,
+            )
+            block_obs_act.append(obs_act)
+            best_pos_list.append(0)  # parent is always at index 0
+
+        block_obs_act = np.asarray(block_obs_act, dtype=np.float32)  # [M, K, T, D]
+        best_pos = np.asarray(best_pos_list, dtype=np.int64)          # [M]
+
+        # Test set (pairwise, for evaluation)
+        test_feedback_num = 5000
+        test_obs_act_1, test_obs_act_2, test_labels, test_binary_labels = (
+            consist_test_dataset(
+                dataset, test_feedback_num, traj_total,
+                segment_size=config.segment_size, threshold=config.threshold,
+            )
+        )
+
+        wandb_init(asdict(config))
+        wandb.log({
+            'dataset/num_groups': len(heap_groups),
+            'dataset/group_size_K': K,
+            'dataset/feedback_type': config.feedback_type,
+            'dataset/model_type': config.model_type,
+        }, step=0)
+
+        dimension = block_obs_act.shape[-1]
+        reward_model = RewardModel(
+            config,
+            obs_act_1=None, obs_act_2=None, labels=None,
+            dimension=dimension,
+            weights=None,
+            blocks=block_obs_act, best_pos=best_pos, worst_pos=None,
+        )
+        reward_model.save_test_dataset(
+            test_obs_act_1, test_obs_act_2, test_labels, test_binary_labels
+        )
+        reward_model.train_model()
+        reward_model.save_model(config.checkpoints_path)
+        return
+    # ---- END: Heap + PL ----
+
     idx_st_1 = []
     idx_st_2 = []
     labels = []
@@ -224,6 +283,23 @@ def train(config: TrainConfig):
                 labels.append([0, 1])
                 weights.append(lam)
 
+        labels = np.asarray(labels, dtype=np.float32)
+        weights = np.asarray(weights, dtype=np.float32)
+
+    elif config.feedback_type == "heap":
+        # Heap feedback → expand to pairwise: parent > each child (with tie handling)
+        heap_groups = multiple_ranked_list
+        gap = config.segment_size * config.threshold
+        for parent_start, parent_return, child_starts, child_returns in heap_groups:
+            for child_start, child_return in zip(child_starts, child_returns):
+                idx_st_1.append(child_start)      # worse (child)
+                idx_st_2.append(parent_start)     # better (parent)
+                diff = parent_return - child_return
+                if diff <= gap:
+                    labels.append([0.5, 0.5])     # Tie
+                else:
+                    labels.append([0, 1])         # Parent strictly better
+                weights.append(1.0)
         labels = np.asarray(labels, dtype=np.float32)
         weights = np.asarray(weights, dtype=np.float32)
 
@@ -284,6 +360,20 @@ def train(config: TrainConfig):
             'dataset/expansion_ratio': expansion_ratio,
             'dataset/expected_pairs': expected_pairs,
             'dataset/pairwise_per_query': pairwise_per_query,  # Sample efficiency metric
+            'dataset/feedback_type': config.feedback_type,
+            'dataset/model_type': config.model_type,
+        }, step=0)
+    elif config.feedback_type == "heap":
+        # For Heap: log groups and pairwise expansion
+        num_groups = len(multiple_ranked_list)
+        group_size_K = config.q_budget
+        num_ties = int(np.sum(labels[:, 0] == 0.5)) if len(labels) > 0 else 0
+        wandb.log({
+            'dataset/num_groups': num_groups,
+            'dataset/group_size_K': group_size_K,
+            'dataset/num_heaps': getattr(config, 'num_heaps', 5),
+            'dataset/num_pairwise_samples': num_pairwise_samples,
+            'dataset/num_ties': num_ties,
             'dataset/feedback_type': config.feedback_type,
             'dataset/model_type': config.model_type,
         }, step=0)

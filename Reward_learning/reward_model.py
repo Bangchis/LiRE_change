@@ -189,6 +189,26 @@ class RewardModel:
         # Combined loss: L = -log P(best) - λ * log P(worst)
         return loss_best + lam * loss_worst  # [B]
 
+    def heap_pl_loss_vec(self, seg_scores, best_pos, mode):
+        """
+        Plackett-Luce loss for Heap groups (best-only, no worst term).
+
+        Args:
+            seg_scores: [B, K] - predicted segment scores (summed over time)
+            best_pos:   [B]    - index of parent segment (always 0 for heap)
+            mode:       str    - "PL" (exponential) or "linear_PL"
+
+        Returns:
+            [B] - per-group loss
+        """
+        if mode == "PL":
+            # -log softmax(s)[best] = cross_entropy(s, best)
+            loss = F.cross_entropy(seg_scores, best_pos, reduction="none")  # [B]
+        else:  # linear_PL
+            u = seg_scores + self.segment_size + 1e-5  # [B, K] ensure positive
+            loss = -torch.log(u[:, 0] / u.sum(dim=-1))  # sum over K dim
+        return loss  # [B]
+
     def save_model(self, path):
         for member in range(self.ensemble_num):
             # join path + member number
@@ -338,6 +358,53 @@ class RewardModel:
                     )
             return
         # ---- END NEW: BW + PL training ----
+
+        # ---- Heap + PL training (direct on blocks, best-only) ----
+        if self.feedback_type == "heap" and self.model_type in ["PL", "linear_PL"]:
+            blocks = torch.from_numpy(self.blocks).float().to(self.device)      # [M, K, T, D]
+            best_pos = torch.from_numpy(self.best_pos).long().to(self.device)   # [M]
+            M, K, T, D = blocks.shape
+
+            for epoch in tqdm.tqdm(range(self.epochs)):
+                idx = torch.randperm(M, device=self.device)
+                blocks_shuf = blocks[idx]
+                best_shuf = best_pos[idx]
+
+                train_loss = 0.0
+                for member in range(self.ensemble_num):
+                    self.net = self.ensemble_model[member]
+                    self.net.train()
+
+                    for b in range((M - 1) // self.batch_size + 1):
+                        bb = blocks_shuf[b * self.batch_size: (b + 1) * self.batch_size]
+                        bp = best_shuf[b * self.batch_size: (b + 1) * self.batch_size]
+
+                        if bb.shape[0] == 0:
+                            continue
+
+                        self.optimizer[member].zero_grad()
+                        pred = self.net(bb)                          # [B, K, T, 1]
+                        seg_scores = pred.sum(dim=2).squeeze(-1)     # [B, K]
+                        loss_vec = self.heap_pl_loss_vec(seg_scores, bp, self.model_type)
+                        loss = loss_vec.mean()
+                        loss.backward()
+                        self.optimizer[member].step()
+                        train_loss += loss.item() * bb.shape[0]
+
+                    self.lr_scheduler[member].step()
+
+                train_loss /= (M * self.ensemble_num)
+
+                if epoch % 20 == 0:
+                    wandb.log({"train_eval/loss": train_loss}, step=epoch)
+                if epoch % 100 == 0:
+                    self.eval(
+                        self.test_obs_act_1, self.test_obs_act_2,
+                        self.test_labels, self.test_binary_labels,
+                        "test_eval", epoch,
+                    )
+            return
+        # ---- END: Heap + PL training ----
 
         self.obs_act_1 = torch.from_numpy(self.obs_act_1).float().to(self.device)
         self.obs_act_2 = torch.from_numpy(self.obs_act_2).float().to(self.device)

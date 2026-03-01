@@ -1,0 +1,56 @@
+# =============================================================================
+# Heap + PL — Tournament Max-Heap Forest with Plackett-Luce Loss
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_heap_PL.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   Giong Heap+BT nhung KHONG mo rong thanh cap pairwise.
+#   Train truc tiep tren nhom K segments bang Plackett-Luce loss (chi best, khong worst):
+#     L = -log( exp(r(parent)) / sum_{x in group} exp(r(x)) )
+#   Khac voi BW+PL: heap chi co best (khong co worst term, khong co lambda_bw).
+#
+#   Same as Heap+BT but trains directly on K-size groups with Plackett-Luce loss.
+#   Only best term (no worst), unlike BW+PL which has both best and worst terms.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: heap         # Tournament Max-Heap
+q_budget: 5                 # K=5: moi nhom 5 segments, chon best
+model_type: PL              # Plackett-Luce: train truc tiep tren group K segments
+                            # "PL" = exponential: P(best) = exp(r(best)) / sum(exp(r(x)))
+                            #   → tuong duong cross_entropy(scores, best_pos)
+                            # "linear_PL" = linear: P(best) = (r(best)+c) / sum(r(x)+c)
+                            #   → on dinh hon, khong bi exp overflow
+                            # KHAC BW+PL: khong co worst term, khong co lambda_bw
+num_heaps: 5                # So cay heap doc lap (khuyen dung 5)
+feedback_num: 500           # M = tong query budget
+method_tag: heap            # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0
+segment_size: 25
+threshold: 0.5              # Dung khi Oracle chon best: neu nhieu segment co return gan nhau
+                            # thi chon ngau nhien trong nhom ung vien
+noise: 0.0
+normalize: true
+data_aug: none
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512             # So groups moi batch (khong phai so cap)
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh
+ensemble_num: 3
+ensemble_method: mean
+
+# --- Khong dung cho Heap+PL ---
+lambda_bw: 1.0              # Khong anh huong (heap chi co best, khong co worst)

@@ -1,0 +1,53 @@
+# =============================================================================
+# BW + BT — Best-Worst Block Feedback with Bradley-Terry Loss
+# =============================================================================
+# Cach chay / How to run:
+#   python3 Reward_learning/learn_reward.py --config=configs/reward_BW_BT.yaml --env=metaworld_button-press-topdown-v2 --seed=10
+#
+# Mo ta / Description:
+#   BW lay mau K segments thanh 1 block, Oracle chon ra BEST va WORST.
+#   Sau do mo rong thanh cac cap pairwise:
+#     - best > tat ca segments khac  (K-1 cap, weight=1.0)
+#     - tat ca segments khac > worst (K-1 cap, weight=lambda_bw)
+#   Tong: ~(2K-2) cap pairwise tu 1 block query.
+#   BW samples K segments into a block, Oracle picks BEST and WORST.
+#   Expanded into ~(2K-2) pairwise constraints per block.
+# =============================================================================
+
+device: cuda
+env: metaworld_button-press-topdown-v2
+seed: 0
+checkpoints_path: logs/
+load_model: null
+
+# --- PHAN QUAN TRONG: Cau hinh feedback ---
+feedback_type: BW           # Best-Worst: chon best + worst tu moi block
+q_budget: 4                 # K=4: moi block co 4 segments → 6 cap pairwise
+                            # K lon hon (10, 20, 30) → nhieu cap/query nhung Oracle kho chon chinh xac
+model_type: BT              # Bradley-Terry: mo rong block thanh cap pairwise roi train BT loss
+                            # Co the doi thanh "linear_BT" de dung linear score function
+lambda_bw: 1.0              # Lambda (λ): trong so cho rang buoc worst
+                            # λ=1.0: best constraints va worst constraints co trong so bang nhau
+                            # λ=0.5: giam trong so worst (tin tuong best hon)
+                            # λ=2.0: tang trong so worst
+feedback_num: 500           # M = so block queries. Tong cap = M * (2K-2) = 500 * 6 = 3000 cap
+method_tag: BW              # Tag wandb
+
+# --- Du lieu / Data ---
+data_quality: 5.0
+segment_size: 25
+threshold: 0.5              # Dung khi chon best/worst: neu nhieu segment co return gan nhau
+                            # thi chon ngau nhien trong nhom ung vien
+noise: 0.0
+normalize: true
+data_aug: none
+human: false
+
+# --- Kien truc MLP ---
+epochs: 300
+batch_size: 512
+lr: 1e-3
+hidden_sizes: 128
+activation: tanh
+ensemble_num: 3
+ensemble_method: mean

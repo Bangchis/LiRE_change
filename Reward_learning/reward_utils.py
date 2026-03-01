@@ -217,6 +217,13 @@ def collect_feedback(dataset, traj_total, config):
         assert config.q_budget >= 2, "BW needs block size K>=2"
 
         return collect_best_worst_blocks(dataset, traj_total, config)
+    elif config.feedback_type == "heap":
+        from heap_builder import build_tournament_heap
+        assert config.q_budget >= 2, "Heap needs group size K >= 2"
+        all_groups, total_queries = build_tournament_heap(dataset, traj_total, config)
+        print(f"Heap: {len(all_groups)} groups, {total_queries} queries used")
+        return all_groups
+
     elif config.feedback_type == "SeqRank":
         print("Sequential Pairwise feedback (SeqRank)")
         single_ranked_list = []
