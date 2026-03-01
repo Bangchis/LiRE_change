@@ -15,6 +15,7 @@ Options:
   --reward-epochs <int>       Reward model training epochs (default: 220)
   --wandb-project <string>    W&B project name (required unless --dry-run)
   --wandb-entity <string>     W&B entity/team (optional)
+  --skip-dataset-check        Skip local dataset existence check
   --dry-run                   Print job matrix and exit
   --help                      Show this help
 
@@ -35,6 +36,7 @@ REWARD_EPOCHS=220
 WANDB_PROJECT=""
 WANDB_ENTITY=""
 DRY_RUN=false
+SKIP_DATASET_CHECK=false
 THREADS_PER_WORKER=8
 
 while [[ $# -gt 0 ]]; do
@@ -73,6 +75,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN=true
+      shift
+      ;;
+    --skip-dataset-check)
+      SKIP_DATASET_CHECK=true
       shift
       ;;
     --help|-h)
@@ -162,6 +168,30 @@ ENVS=(
   "drawer-open-v2"
   "peg-insert-side-v2"
 )
+
+check_required_datasets() {
+  local missing=0
+  for env in "${ENVS[@]}"; do
+    for ds_seed in 0 1 2; do
+      local pkl_path="${REPO_ROOT}/dataset/MetaWorld/${env}/saved_replay_buffer_1000000_seed${ds_seed}.pkl"
+      if [[ ! -f "$pkl_path" ]]; then
+        echo "Missing dataset file: $pkl_path" >&2
+        missing=1
+      fi
+    done
+  done
+
+  if [[ "$missing" -ne 0 ]]; then
+    echo "" >&2
+    echo "Dataset preflight failed. Download datasets first:" >&2
+    echo "  cd ${REPO_ROOT}" >&2
+    echo "  bash dataset/download.sh" >&2
+    echo "" >&2
+    echo "After download, re-run this script." >&2
+    return 1
+  fi
+  return 0
+}
 
 declare -a JOBS
 for env in "${ENVS[@]}"; do
@@ -294,6 +324,10 @@ print_job_matrix
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "Dry-run enabled. No jobs were launched."
   exit 0
+fi
+
+if [[ "$SKIP_DATASET_CHECK" == "false" ]]; then
+  check_required_datasets || exit 1
 fi
 
 for ((g=0; g<NUM_GPUS; g++)); do

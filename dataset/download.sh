@@ -1,16 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 download_tasks=(
     box-close-v2
     button-press-topdown-v2
     button-press-topdown-wall-v2
-    dial-turn-v2
     drawer-open-v2
-    hammer-v2
-    handle-pull-side-v2
-    lever-pull-v2
     peg-insert-side-v2
-    peg-unplug-side-v2
     sweep-into-v2
-    sweep-v2
 )
 
 declare -A file_ids=(
@@ -28,11 +25,24 @@ declare -A file_ids=(
     # ["sweep-v2"]="1u7f5WZYQlqXSxyJGI56kWlafYluFrgJb"
 )
 
-for i in "${download_tasks[@]}"
-do  
-    task=$i
-    file_id=${file_ids[$i]}
-    echo "Downloading $i"
-    gdown --continue --output dataset/MetaWorld/$task.zip $file_id
-    unzip -q -o dataset/MetaWorld/$task.zip -d dataset/MetaWorld/ && rm dataset/MetaWorld/$task.zip
+if ! command -v gdown >/dev/null 2>&1; then
+    echo "Error: gdown not found. Install it with: pip install gdown" >&2
+    exit 1
+fi
+
+mkdir -p dataset/MetaWorld
+
+for task in "${download_tasks[@]}"; do
+    file_id="${file_ids[$task]:-}"
+    if [[ -z "$file_id" ]]; then
+        echo "Skip ${task}: missing file_id"
+        continue
+    fi
+
+    echo "Downloading ${task}"
+    gdown --continue --output "dataset/MetaWorld/${task}.zip" "$file_id"
+    unzip -q -o "dataset/MetaWorld/${task}.zip" -d dataset/MetaWorld/
+    rm -f "dataset/MetaWorld/${task}.zip"
 done
+
+echo "Done. Dataset extracted under dataset/MetaWorld/"
